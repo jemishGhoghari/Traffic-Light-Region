@@ -20,6 +20,7 @@ class ROI:
         self.state_list = ['Green', 'Red', 'Blue', 'Yellow']
         self.pickle_model = open('./pickle_data/model.pkl', 'rb')
         self.clf = pickle.load(self.pickle_model)
+        self.night_mode = night_mode
 
         # Checking input
         if os.path.isfile(input):
@@ -38,7 +39,7 @@ class ROI:
             exit(-1)
 
         # Assigning ROI based on night or day video mode
-        if night_mode == True:
+        if self.night_mode:
             self.red_region = region[2]
             self.green_region = region[3]
         else:
@@ -52,8 +53,8 @@ class ROI:
             shutil.rmtree(self.output_dir_path)       # Removes all the subdirectories!
             os.makedirs(self.output_dir_path)
 
-        self.csv_data_file = open(self.output_dir_path + '/state_data.csv', 'a')
-        self.csv_hsv_data = open(self.output_dir_path + '/hsv_data.csv', 'a')
+        self.csv_data_raw = open(self.output_dir_path + '/state_data_raw.csv', 'a')
+        self.csv_data_final = open(self.output_dir_path + '/state_data_final.csv', 'a')
 
         # Run Main method
         self.run()
@@ -148,6 +149,13 @@ class ROI:
             plt.imshow(img, format)
         plt.show()
 
+    def post_processing(self, df):
+        df_final = df.copy()
+        df_final['State'].replace('', np.nan, inplace=True)
+        df_final.dropna(subset=['State'], inplace=True)
+        df_final.to_csv(self.csv_data_final, index=False)
+        print("Finished post processing")
+
     def light_state(self, frame):
         rgb_list_red = self.RGB_list(frame[0])
         rgb_list_green = self.RGB_list(frame[1])
@@ -203,15 +211,26 @@ class ROI:
         hsv_mean_green = hue_sum_green / length_green
         hsv_mean_red = hue_sum_red / length_red
 
-        # Detection based on color Threshold
-        if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
-            if hsv_mean_green >= 25 and hsv_mean_green <= 40:
-                return 'Green'
-        elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
-            if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
-                return 'Red'
+        # Detection based on color Threshold 
+        if self.night_mode:
+            if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
+                if hsv_mean_green >= 25 and hsv_mean_green <= 40:
+                    return 'Green'
+            elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
+                if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
+                    return 'Red'
+            else:
+                return 'Not Detected'
+
         else:
-            return 'Not Detected'
+            if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
+                if hsv_mean_green >= 25 and hsv_mean_green <= 40:
+                    return 'Green'
+            elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
+                if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
+                    return 'Red'
+            else:
+                return 'Not Detected'
 
         return 'Not Detected'
 
@@ -240,31 +259,24 @@ class ROI:
 
                     # Light State
                     state = self.light_state([img_red, img_green])
-                    # state = self.light_state([img_red, img_green])
                     state_data['State'] = state
 
-                    # visualization
-                    if state == self.state_list[1]:
-                        frame = cv2.putText(frame, state, coordinates, self.font, 1, (0, 0, 255), 2, cv2.LINE_AA)
-                    elif state == self.state_list[0]:
-                        frame = cv2.putText(frame, state, coordinates, self.font, 1, (0, 255, 0), 2, cv2.LINE_AA)
-                    elif state == 'Not Detected':
-                        frame = cv2.putText(frame, state, coordinates, self.font, 1, (200, 0, 0), 2, cv2.LINE_AA)
+                    if state == 'Not Detected':
                         cv2.imwrite('./not detected/img' + str(counter) + '.jpg', frame)
                         counter += 1
-                    cv2.imshow('Video', frame)
-                    # Press Q on keyboard to  exit
-                    if cv2.waitKey(30) & 0xFF == ord('q'):
-                        break
 
                     output_data.append(state_data)
                 else:
                     break
                 
             self.input.release()
+
+            # State raw data
             df = pd.DataFrame(output_data)
-            df.to_csv(self.csv_data_file)
-            cv2.destroyAllWindows()
+            df.to_csv(self.csv_data_raw, index=False)
+
+            # State post processing data
+            self.post_processing(df)
 
         elif self.target_mode == 'Image':
 
