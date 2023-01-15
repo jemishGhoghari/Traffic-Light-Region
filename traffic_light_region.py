@@ -53,7 +53,6 @@ class ROI:
             shutil.rmtree(self.output_dir_path)       # Removes all the subdirectories!
             os.makedirs(self.output_dir_path)
 
-        self.csv_data_raw = open(self.output_dir_path + '/state_data_raw.csv', 'a')
         self.csv_data_final = open(self.output_dir_path + '/state_data_final.csv', 'a')
 
         # Run Main method
@@ -149,14 +148,75 @@ class ROI:
             plt.imshow(img, format)
         plt.show()
 
-    def post_processing(self, df):
-        df_final = df.copy()
-        df_final['State'].replace('', np.nan, inplace=True)
-        df_final.dropna(subset=['State'], inplace=True)
-        df_final.to_csv(self.csv_data_final, index=False)
-        print("Finished post processing")
+    def light_state_night(self, frame):
+        rgb_list_red = self.RGB_list(frame[0])
+        rgb_list_green = self.RGB_list(frame[1])
+        
+        hsv_list_red = self.HSV_list(rgb_list_red)
+        hsv_list_green = self.HSV_list(rgb_list_green)
 
-    def light_state(self, frame):
+        # Mean of Hue values 
+        hue_sum_red = 0     # Sum of all Hue values which satisfies the condition for RED Region
+        hue_sum_green = 0   # Sum of all Hue values which satisfies the condition for GREEN Region
+        length_green = 0    # Length of Green value
+        length_red = 0      # Length of Red color
+        
+        # Intensity of Saturation and Value
+        sat_on_pixels_red = 0     # number of Saturation Pixels that are Bright in Red Region
+        sat_on_pixels_green = 0   # number of Saturation Pixels that are Bright in Green Region
+
+        val_on_pixels_red = 0     # number of Value Pixels that are Bright in Red Region
+        val_on_pixels_green = 0   # number of Value Pixels that are Bright in Green Region
+
+        for i in hsv_list_green:
+            if i[0] >= 25 and i[0] <= 40:
+                hue_sum_green += i[0]
+                length_green += 1
+                if i[1] >= 40 and i[1] <= 100:
+                    sat_on_pixels_green += 1
+                if i[2] >= 190 and i[2] <= 255:
+                    val_on_pixels_green += 1
+
+        for j in hsv_list_red:
+            if j[0] >= 90 and j[0] <= 120:
+                hue_sum_red += j[0]
+                length_red += 1
+                if j[1] >= 0 and j[1] <= 58:
+                    sat_on_pixels_red += 1
+                if j[2] >= 230 and j[2] <= 255:
+                    val_on_pixels_red += 1
+
+        #hue_intensity_green = (hue_on_pixels_green/len(hsv_list_green)) * 100
+        sat_intensity_green = (sat_on_pixels_green/len(hsv_list_green)) * 100
+        val_intensity_green = (val_on_pixels_green/len(hsv_list_green)) * 100
+
+        #hue_intensity_red = (hue_on_pixels_red/len(hsv_list_red)) * 100
+        sat_intensity_red = (sat_on_pixels_red/len(hsv_list_red)) * 100
+        val_intensity_red = (val_on_pixels_red/len(hsv_list_red)) * 100
+
+        if length_green == 0:
+            length_green = 1
+        if length_red == 0:
+            length_red = 1
+
+        # Mean of Hue
+        hsv_mean_green = hue_sum_green / length_green
+        hsv_mean_red = hue_sum_red / length_red
+
+        # Detection based on color Threshold 
+        # Day mode (different ROI posision and color threshold)
+        if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
+            if hsv_mean_green >= 25 and hsv_mean_green <= 40:
+                return 'Green'
+        elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
+            if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
+                return 'Red'
+        else:
+            return 'Not Detected'
+
+        return 'Not Detected'
+
+    def light_state_day(self, frame):
         rgb_list_red = self.RGB_list(frame[0])
         rgb_list_green = self.RGB_list(frame[1])
         
@@ -212,25 +272,15 @@ class ROI:
         hsv_mean_red = hue_sum_red / length_red
 
         # Detection based on color Threshold 
-        if self.night_mode:
-            if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
-                if hsv_mean_green >= 25 and hsv_mean_green <= 40:
-                    return 'Green'
-            elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
-                if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
-                    return 'Red'
-            else:
-                return 'Not Detected'
-
+        # Day mode (different ROI posision and color threshold)
+        if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
+            if hsv_mean_green >= 25 and hsv_mean_green <= 40:
+                return 'Green'
+        elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
+            if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
+                return 'Red'
         else:
-            if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
-                if hsv_mean_green >= 25 and hsv_mean_green <= 40:
-                    return 'Green'
-            elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
-                if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
-                    return 'Red'
-            else:
-                return 'Not Detected'
+            return 'Not Detected'
 
         return 'Not Detected'
 
@@ -258,8 +308,12 @@ class ROI:
                     img_green = self.region_of_interest(frame, self.green_region)
 
                     # Light State
-                    state = self.light_state([img_red, img_green])
-                    state_data['State'] = state
+                    if self.night_mode:
+                        state = self.light_state_night([img_red, img_green])
+                        state_data['State'] = state
+                    else:
+                        state = self.light_state_day([img_red, img_green])
+                        state_data['State'] = state
 
                     if state == 'Not Detected':
                         cv2.imwrite('./not detected/img' + str(counter) + '.jpg', frame)
@@ -271,12 +325,10 @@ class ROI:
                 
             self.input.release()
 
-            # State raw data
+            # State data final dumb into csv file
             df = pd.DataFrame(output_data)
-            df.to_csv(self.csv_data_raw, index=False)
-
-            # State post processing data
-            self.post_processing(df)
+            df.to_csv(self.csv_data_final, index=False, lineterminator='\n')
+            print('Done Writing CSV data!')
 
         elif self.target_mode == 'Image':
 
@@ -297,19 +349,19 @@ class ROI:
             hsv_list_red = self.HSV_list(rgb_list_red)
             hsv_list_green = self.HSV_list(rgb_list_green)
 
-            for i in hsv_list_green:
-                print(i[0])
+            # for i in hsv_list_green:
+            #     print(i[0])
 
-            print()
-            for i in hsv_list_green:
-                print(i[1])
+            # print()
+            # for i in hsv_list_green:
+            #     print(i[1])
 
-            print()
-            for i in hsv_list_green:
-                print(i[2])
+            # print()
+            # for i in hsv_list_green:
+            #     print(i[2])
 
             # Light State
-            state = self.light_state([img_red, img_green])
+            state = self.light_state_night([img_red, img_green])
             print(state)
             if state == self.state_list[1]:
                 frame = cv2.putText(frame, state, coordinates, self.font, 1, (0, 0, 255), 2, cv2.LINE_AA)
@@ -325,9 +377,9 @@ class ROI:
     def argument_parser():
         ap = argparse.ArgumentParser()
         # ap.add_argument("--input", type=str, default='./videos/new_video.mp4', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
-        ap.add_argument("--input", type=str, default='./not detected/img990.jpg', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
-        ap.add_argument("--region", type=list, default = [[350, 1504, 354, 1508], [358, 1504, 362, 1508], [217, 1464, 221, 1468], [224, 1463, 228, 1467]], help="list of region dimensions eg. [x, y, width, height]")
-        ap.add_argument("--night_mode", type=bool, default=False, help='detect in night video or day video')
+        ap.add_argument("--input", type=str, default='./not detected/img38.jpg', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
+        ap.add_argument("--region", type=list, default = [[350, 1504, 354, 1508], [358, 1504, 362, 1508], [217, 1464, 220, 1467], [224, 1463, 227, 1466]], help="list of region dimensions eg. [x, y, width, height]")
+        ap.add_argument("--night_mode", type=bool, default=True, help='detect in night video or day video')
         args = ap.parse_args()
         return args
     
