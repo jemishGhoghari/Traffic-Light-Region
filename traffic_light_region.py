@@ -11,11 +11,9 @@ import colorsys
 
 # Region of Interest
 class ROI:
-    def __init__(self, input, region):
+    def __init__(self, input, region, night_mode):
         self.region = region
         self.mean = 0
-        self.red_region = region[0]
-        self.green_region = region[1]
         self.fps = 30
         self.font = cv2.FONT_HERSHEY_SIMPLEX
         self.output_dir_path = './data'
@@ -38,6 +36,14 @@ class ROI:
         else:
             print("Input file doesn't exist. Check the input path")
             exit(-1)
+
+        # Assigning ROI based on night or day video mode
+        if night_mode == True:
+            self.red_region = region[2]
+            self.green_region = region[3]
+        else:
+            self.red_region = region[0]
+            self.green_region = region[1]
 
         # Creating Output Directory
         if not os.path.exists(self.output_dir_path):
@@ -209,84 +215,6 @@ class ROI:
 
         return 'Not Detected'
 
-    def detection_by_opencv(self, frame):
-        rgb_list_red = self.RGB_list(frame[0])
-        rgb_list_green = self.RGB_list(frame[1])
-        
-        hsv_list_red = self.HSV_list(rgb_list_red)
-        hsv_list_green = self.HSV_list(rgb_list_green)
-
-        # Mean of Hue values 
-        hue_sum_red = 0     # Sum of all Hue values which satisfies the condition for RED Region
-        hue_sum_green = 0   # Sum of all Hue values which satisfies the condition for GREEN Region
-        length_green = 0    # Length of Green value
-        length_red = 0      # Length of Red color
-        
-        # Intensity of Saturation and Value
-        sat_on_pixels_red = 0     # number of Saturation Pixels that are Bright in Red Region
-        sat_on_pixels_green = 0   # number of Saturation Pixels that are Bright in Green Region
-
-        val_on_pixels_red = 0     # number of Value Pixels that are Bright in Red Region
-        val_on_pixels_green = 0   # number of Value Pixels that are Bright in Green Region
-
-        for i in hsv_list_green:
-            if i[0] >= 25 and i[0] <= 40:
-                hue_sum_green += i[0]
-                length_green += 1
-                if i[1] >= 170 and i[1] <= 255:
-                    sat_on_pixels_green += 1
-                if i[2] >= 170 and i[2] <= 255:
-                    val_on_pixels_green += 1
-
-        for j in hsv_list_red:
-            if j[0] >= 90 and j[0] <= 120:
-                hue_sum_red += j[0]
-                length_red += 1
-                if j[1] >= 123 and j[1] <= 255:
-                    sat_on_pixels_red += 1
-                if j[2] >= 193 and j[2] <= 255:
-                    val_on_pixels_red += 1
-
-        #hue_intensity_green = (hue_on_pixels_green/len(hsv_list_green)) * 100
-        sat_intensity_green = (sat_on_pixels_green/len(hsv_list_green)) * 100
-        val_intensity_green = (val_on_pixels_green/len(hsv_list_green)) * 100
-
-        #hue_intensity_red = (hue_on_pixels_red/len(hsv_list_red)) * 100
-        sat_intensity_red = (sat_on_pixels_red/len(hsv_list_red)) * 100
-        val_intensity_red = (val_on_pixels_red/len(hsv_list_red)) * 100
-
-        if length_green == 0:
-            length_green = 1
-        if length_red == 0:
-            length_red = 1
-
-        # Mean of Hue
-        hsv_mean_green = hue_sum_green / length_green
-        hsv_mean_red = hue_sum_red / length_red
-
-        # Detection based on color Threshold
-        if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
-            if hsv_mean_green >= 25 and hsv_mean_green <= 40:
-                return 'Green'
-        elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
-            if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
-                return 'Red'
-        else:
-            return 'Not Detected'
-
-        return 'Not Detected'
-
-    def detect_by_model(self, frame):
-        data = []
-        rgb_list = self.RGB_list(frame)
-        hsv_list = self.HSV_list(rgb_list)
-        for i in hsv_list:
-            state = self.clf.predict_proba([i])[0][1]
-            # data.append("{:.1f}".format(state))
-            data.append(state)
-        
-        return data
-
     # Run main
     def run(self):
         if self.target_mode == 'Video':
@@ -311,7 +239,7 @@ class ROI:
                     img_green = self.region_of_interest(frame, self.green_region)
 
                     # Light State
-                    state = self.detection_by_opencv([img_red, img_green])
+                    state = self.light_state([img_red, img_green])
                     # state = self.light_state([img_red, img_green])
                     state_data['State'] = state
 
@@ -369,7 +297,7 @@ class ROI:
                 print(i[2])
 
             # Light State
-            state = self.detection_by_opencv([img_red, img_green])
+            state = self.light_state([img_red, img_green])
             print(state)
             if state == self.state_list[1]:
                 frame = cv2.putText(frame, state, coordinates, self.font, 1, (0, 0, 255), 2, cv2.LINE_AA)
@@ -386,7 +314,8 @@ class ROI:
         ap = argparse.ArgumentParser()
         # ap.add_argument("--input", type=str, default='./videos/new_video.mp4', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
         ap.add_argument("--input", type=str, default='./not detected/img990.jpg', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
-        ap.add_argument("--region", type=list, default = [[217, 1464, 221, 1468], [224, 1463, 228, 1467]], help="list of region dimensions eg. [x, y, width, height]")
+        ap.add_argument("--region", type=list, default = [[350, 1504, 354, 1508], [358, 1504, 362, 1508], [217, 1464, 221, 1468], [224, 1463, 228, 1467]], help="list of region dimensions eg. [x, y, width, height]")
+        ap.add_argument("--night_mode", type=bool, default=False, help='detect in night video or day video')
         args = ap.parse_args()
         return args
     
@@ -452,6 +381,8 @@ else:
 # [[350, 1504, 354, 1508], [358, 1504, 362, 1508]]
 
 
+# coordinates for night video
+# [[217, 1464, 221, 1468], [224, 1463, 228, 1467]]
 
 
 ## Left off: Missing some frames from detection. need to tight up the threshold
