@@ -8,6 +8,7 @@ import pickle
 import pandas as pd
 import numpy as np
 import colorsys
+import time
 
 # Region of Interest
 class ROI:
@@ -21,6 +22,7 @@ class ROI:
         self.pickle_model = open('./pickle_data/model.pkl', 'rb')
         self.clf = pickle.load(self.pickle_model)
         self.night_mode = night_mode
+        self.not_detected_path = './not detected'
 
         # Checking input
         if os.path.isfile(input):
@@ -38,13 +40,27 @@ class ROI:
             print("Input file doesn't exist. Check the input path")
             exit(-1)
 
-        # Assigning ROI based on night or day video mode
+        # Assigning ROI and color threshold based on night or day video mode
         if self.night_mode:
             self.red_region = region[2]
             self.green_region = region[3]
+            self.green_params = {'hue_low': 25, 'hue_high': 40, 
+                                 'sat_low': 40, 'sat_high': 100, 
+                                 'val_low': 190, 'val_high':255}
+
+            self.red_params = {'hue_low': 90, 'hue_high': 120, 
+                               'sat_low': 0, 'sat_high': 58, 
+                               'val_low': 230, 'val_high':255}
         else:
             self.red_region = region[0]
             self.green_region = region[1]
+            self.green_params = {'hue_low': 25, 'hue_high': 40, 
+                                 'sat_low': 113, 'sat_high': 255,
+                                 'val_low': 170, 'val_high':255}
+
+            self.red_params = {'hue_low': 90, 'hue_high': 120, 
+                               'sat_low': 123, 'sat_high': 255, 
+                               'val_low': 193, 'val_high':255}
 
         # Creating Output Directory
         if not os.path.exists(self.output_dir_path):
@@ -52,6 +68,13 @@ class ROI:
         else:
             shutil.rmtree(self.output_dir_path)       # Removes all the subdirectories!
             os.makedirs(self.output_dir_path)
+
+        # Creating 'not detected' Directory to store undetected frames
+        if not os.path.exists(self.not_detected_path):
+                os.makedirs(self.not_detected_path)
+        else:
+            shutil.rmtree(self.not_detected_path)       # Removes all the subdirectories!
+            os.makedirs(self.not_detected_path)
 
         self.csv_data_final = open(self.output_dir_path + '/state_data_final.csv', 'a')
 
@@ -148,7 +171,7 @@ class ROI:
             plt.imshow(img, format)
         plt.show()
 
-    def light_state_night(self, frame):
+    def light_state(self, frame):
         rgb_list_red = self.RGB_list(frame[0])
         rgb_list_green = self.RGB_list(frame[1])
         
@@ -169,21 +192,21 @@ class ROI:
         val_on_pixels_green = 0   # number of Value Pixels that are Bright in Green Region
 
         for i in hsv_list_green:
-            if i[0] >= 25 and i[0] <= 40:
+            if i[0] >= self.green_params["hue_low"] and i[0] <= self.green_params["hue_high"]:
                 hue_sum_green += i[0]
                 length_green += 1
-                if i[1] >= 40 and i[1] <= 100:
+                if i[1] >= self.green_params["sat_low"] and i[1] <= self.green_params["sat_high"]:
                     sat_on_pixels_green += 1
-                if i[2] >= 190 and i[2] <= 255:
+                if i[2] >= self.green_params["val_low"] and i[2] <= self.green_params["val_high"]:
                     val_on_pixels_green += 1
 
         for j in hsv_list_red:
-            if j[0] >= 90 and j[0] <= 120:
+            if j[0] >= self.red_params["hue_low"] and j[0] <= self.red_params["hue_high"]:
                 hue_sum_red += j[0]
                 length_red += 1
-                if j[1] >= 0 and j[1] <= 58:
+                if j[1] >= self.red_params["sat_low"] and j[1] <= self.red_params["sat_high"]:
                     sat_on_pixels_red += 1
-                if j[2] >= 230 and j[2] <= 255:
+                if j[2] >= self.red_params["val_low"] and j[2] <= self.red_params["val_high"]:
                     val_on_pixels_red += 1
 
         #hue_intensity_green = (hue_on_pixels_green/len(hsv_list_green)) * 100
@@ -206,78 +229,10 @@ class ROI:
         # Detection based on color Threshold 
         # Day mode (different ROI posision and color threshold)
         if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
-            if hsv_mean_green >= 25 and hsv_mean_green <= 40:
+            if hsv_mean_green >= self.green_params["hue_low"] and hsv_mean_green <= self.green_params["hue_high"]:
                 return 'Green'
         elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
-            if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
-                return 'Red'
-        else:
-            return 'Not Detected'
-
-        return 'Not Detected'
-
-    def light_state_day(self, frame):
-        rgb_list_red = self.RGB_list(frame[0])
-        rgb_list_green = self.RGB_list(frame[1])
-        
-        hsv_list_red = self.HSV_list(rgb_list_red)
-        hsv_list_green = self.HSV_list(rgb_list_green)
-
-        # Mean of Hue values 
-        hue_sum_red = 0     # Sum of all Hue values which satisfies the condition for RED Region
-        hue_sum_green = 0   # Sum of all Hue values which satisfies the condition for GREEN Region
-        length_green = 0    # Length of Green value
-        length_red = 0      # Length of Red color
-        
-        # Intensity of Saturation and Value
-        sat_on_pixels_red = 0     # number of Saturation Pixels that are Bright in Red Region
-        sat_on_pixels_green = 0   # number of Saturation Pixels that are Bright in Green Region
-
-        val_on_pixels_red = 0     # number of Value Pixels that are Bright in Red Region
-        val_on_pixels_green = 0   # number of Value Pixels that are Bright in Green Region
-
-        for i in hsv_list_green:
-            if i[0] >= 25 and i[0] <= 40:
-                hue_sum_green += i[0]
-                length_green += 1
-                if i[1] >= 170 and i[1] <= 255:
-                    sat_on_pixels_green += 1
-                if i[2] >= 170 and i[2] <= 255:
-                    val_on_pixels_green += 1
-
-        for j in hsv_list_red:
-            if j[0] >= 90 and j[0] <= 120:
-                hue_sum_red += j[0]
-                length_red += 1
-                if j[1] >= 123 and j[1] <= 255:
-                    sat_on_pixels_red += 1
-                if j[2] >= 193 and j[2] <= 255:
-                    val_on_pixels_red += 1
-
-        #hue_intensity_green = (hue_on_pixels_green/len(hsv_list_green)) * 100
-        sat_intensity_green = (sat_on_pixels_green/len(hsv_list_green)) * 100
-        val_intensity_green = (val_on_pixels_green/len(hsv_list_green)) * 100
-
-        #hue_intensity_red = (hue_on_pixels_red/len(hsv_list_red)) * 100
-        sat_intensity_red = (sat_on_pixels_red/len(hsv_list_red)) * 100
-        val_intensity_red = (val_on_pixels_red/len(hsv_list_red)) * 100
-
-        if length_green == 0:
-            length_green = 1
-        if length_red == 0:
-            length_red = 1
-
-        # Mean of Hue
-        hsv_mean_green = hue_sum_green / length_green
-        hsv_mean_red = hue_sum_red / length_red
-
-        # Detection based on color Threshold 
-        # Day mode (different ROI posision and color threshold)
-        if (sat_intensity_green > sat_intensity_red) and (val_intensity_green > val_intensity_red):
-            if hsv_mean_green >= 25 and hsv_mean_green <= 40:
-                return 'Green'
-        elif (sat_intensity_red > sat_intensity_green) and (val_intensity_red > val_intensity_green):
-            if (hsv_mean_red >= 90 and hsv_mean_red <= 120):
+            if (hsv_mean_red >= self.red_params["hue_low"] and hsv_mean_red <= self.red_params["hue_high"]):
                 return 'Red'
         else:
             return 'Not Detected'
@@ -294,6 +249,9 @@ class ROI:
             # undetected frame counter
             counter = 0
 
+            # timer
+            start = time.time()
+
             if self.input.isOpened() == False:
                 print('Error openning video file')
             while(self.input.isOpened()):
@@ -308,27 +266,27 @@ class ROI:
                     img_green = self.region_of_interest(frame, self.green_region)
 
                     # Light State
-                    if self.night_mode:
-                        state = self.light_state_night([img_red, img_green])
-                        state_data['State'] = state
-                    else:
-                        state = self.light_state_day([img_red, img_green])
-                        state_data['State'] = state
+                    state = self.light_state([img_red, img_green])
+                    state_data['State'] = state
 
                     if state == 'Not Detected':
-                        cv2.imwrite('./not detected/img' + str(counter) + '.jpg', frame)
+                        cv2.imwrite(self.not_detected_path + '/img' + str(counter) + '.jpg', frame)
                         counter += 1
 
                     output_data.append(state_data)
                 else:
                     break
-                
+            
+            # releasing video memory
             self.input.release()
 
+            print('Done processing video!')
             # State data final dumb into csv file
             df = pd.DataFrame(output_data)
             df.to_csv(self.csv_data_final, index=False, lineterminator='\n')
             print('Done Writing CSV data!')
+            end = time.time()
+            print('Execution time: ', end - start)
 
         elif self.target_mode == 'Image':
 
@@ -349,26 +307,9 @@ class ROI:
             hsv_list_red = self.HSV_list(rgb_list_red)
             hsv_list_green = self.HSV_list(rgb_list_green)
 
-            # for i in hsv_list_green:
-            #     print(i[0])
-
-            # print()
-            # for i in hsv_list_green:
-            #     print(i[1])
-
-            # print()
-            # for i in hsv_list_green:
-            #     print(i[2])
-
             # Light State
-            state = self.light_state_night([img_red, img_green])
+            state = self.light_state([img_red, img_green])
             print(state)
-            if state == self.state_list[1]:
-                frame = cv2.putText(frame, state, coordinates, self.font, 1, (0, 0, 255), 2, cv2.LINE_AA)
-            elif state == self.state_list[0]:
-                frame = cv2.putText(frame, state, coordinates, self.font, 1, (0, 255, 0), 2, cv2.LINE_AA)
-            elif state == 'Not Detected':
-                frame = cv2.putText(frame, state, coordinates, self.font, 1, (200, 0, 0), 2, cv2.LINE_AA)
             cv2.imshow('Video', frame)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
@@ -377,9 +318,9 @@ class ROI:
     def argument_parser():
         ap = argparse.ArgumentParser()
         # ap.add_argument("--input", type=str, default='./videos/new_video.mp4', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
-        ap.add_argument("--input", type=str, default='./not detected/img38.jpg', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
+        ap.add_argument("--input", type=str, default='./images/img61.jpg', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
         ap.add_argument("--region", type=list, default = [[350, 1504, 354, 1508], [358, 1504, 362, 1508], [217, 1464, 220, 1467], [224, 1463, 227, 1466]], help="list of region dimensions eg. [x, y, width, height]")
-        ap.add_argument("--night_mode", type=bool, default=True, help='detect in night video or day video')
+        ap.add_argument("--night_mode", type=bool, default=False, help='detect in night video or day video')
         args = ap.parse_args()
         return args
     
@@ -390,6 +331,8 @@ class ROI:
 # Main Method
 if '__main__' == __name__:
     input_args = ROI.argument_parser()
+    print('--------Carissma--------')
+    print('Processing.....')
     ROI.main(input_args)
 
 
