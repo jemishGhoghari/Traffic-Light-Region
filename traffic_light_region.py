@@ -269,9 +269,22 @@ class ROI:
                     state = self.light_state([img_red, img_green])
                     state_data['State'] = state
 
-                    if state == 'Not Detected':
-                        cv2.imwrite(self.not_detected_path + '/img' + str(counter) + '.jpg', frame)
+                    if state == self.state_list[1]:
+                        frame = cv2.putText(frame, state, coordinates, self.font, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                    elif state == self.state_list[0]:
+                        frame = cv2.putText(frame, state, coordinates, self.font, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                    elif state == 'Not Detected':
+                        frame = cv2.putText(frame, state, coordinates, self.font, 1, (200, 0, 0), 2, cv2.LINE_AA)
+                        cv2.imwrite('./not detected/img' + str(counter) + '.jpg', frame)
                         counter += 1
+                    cv2.imshow('Video', frame)
+                    # Press Q on keyboard to  exit
+                    if cv2.waitKey(30) & 0xFF == ord('q'):
+                        break
+
+                    # if state == 'Not Detected':
+                    #     cv2.imwrite(self.not_detected_path + '/img' + str(counter) + '.jpg', frame)
+                    #     counter += 1
 
                     output_data.append(state_data)
                 else:
@@ -287,6 +300,7 @@ class ROI:
             print('Done Writing CSV data!')
             end = time.time()
             print('Execution time: ', end - start)
+            cv2.destroyAllWindows()
 
         elif self.target_mode == 'Image':
 
@@ -318,7 +332,7 @@ class ROI:
     def argument_parser():
         ap = argparse.ArgumentParser()
         # ap.add_argument("--input", type=str, default='./videos/new_video.mp4', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
-        ap.add_argument("--input", type=str, default='./images/img61.jpg', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
+        ap.add_argument("--input", type=str, default='./images/img6.jpg', help=("path to the input file", "e.g. .mkv .mp4 .jpg .png"))
         ap.add_argument("--region", type=list, default = [[350, 1504, 354, 1508], [358, 1504, 362, 1508], [217, 1464, 220, 1467], [224, 1463, 227, 1466]], help="list of region dimensions eg. [x, y, width, height]")
         ap.add_argument("--night_mode", type=bool, default=False, help='detect in night video or day video')
         args = ap.parse_args()
